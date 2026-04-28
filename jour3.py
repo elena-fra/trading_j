@@ -2,43 +2,33 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 
+from grafico_winrate import mostra_grafico_winrate
+from pulsante_salva import carica_trades, salva_trade, init_db
+from grafico_pnl import mostra_grafico_pnl
+
 
 st.set_page_config(page_title="Trading Journal", page_icon="", layout="wide")
 
-conn = sqlite3.connect("trades.db", check_same_thread=False)
-cur = conn.cursor()
 
-cur.execute("""
-CREATE TABLE IF NOT EXISTS trades (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT,
-    trade numero TEXT,
-    emozione TEXT,
-    asset TEXT,
-    risultato TEXT,
-    mercato TEXT,
-    trigger entrata TEXT,
-    motivo uscita TEXT,
-    contratti INTEGER,
-    chiusura TEXT,
-    prezzo entrata TEXT,
-    prezzo uscita TEXT,
-    direzione TEXT
-)
-""")
-conn.commit()
+# Inizializza database
+init_db()
 
-def salva_trade_sql(dati):
-    cur.execute("""
-    INSERT INTO trades (
-        nome, trade numero, emozione, asset, risultato, mercato,
-        trigger entrata, motivo uscita, contratti, chiusura,
-        prezzo entrata, prezzo uscita, direzione
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, dati)
-    conn.commit()
 
+# Stato iniziale
+if "apri_journal" not in st.session_state:
+    st.session_state.apri_journal = False
+
+
+# Callback pulsanti
+def apri_trade():
+    st.session_state.apri_journal = True
+
+
+def chiudi_trade():
+    st.session_state.apri_journal = False
+
+
+# Input nome
 nome = st.text_input("Inserisci il tuo nome")
 
 if nome:
@@ -46,14 +36,37 @@ if nome:
 else:
     st.title("Trading Journal")
 
-if "apri_journal" not in st.session_state:
-    st.session_state.apri_journal = False
 
-if st.button("Nuovo Trade"):
-    st.session_state.apri_journal = True
+# Bottone apertura journal
+st.button("Nuovo Trade", on_click=apri_trade)
 
+
+# CSS pulsanti
+st.markdown("""
+<style>
+div.stElementContainer.st-key-salva_trade div.stButton > button {
+    background-color: #39FF14 !important;
+    color: black !important;
+    border: none !important;
+    border-radius: 12px !important;
+    font-weight: bold !important;
+    font-size: 18px !important;
+}
+
+div.stElementContainer.st-key-chiudi_journal div.stButton > button {
+    background-color: #9400D3 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 12px !important;
+    font-weight: bold !important;
+    font-size: 18px !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# Apertura journal
 if st.session_state.apri_journal:
-
     st.subheader("Inserimento trade")
 
     col1, col2, col3 = st.columns([1.2, 1.2, 1])
@@ -79,12 +92,14 @@ if st.session_state.apri_journal:
             unsafe_allow_html=True
         )
 
+        data_trade= st.date_input("Data", key="data_trade")
+
     with col2:
         asset = st.text_input("Inserisci Asset", key="asset")
 
         risultato = st.selectbox(
             "Come sei uscitx dal Trade",
-            ["Stop Loss", "Stop Profit", "Take Profit", "Trailing Stop"],
+            ["Stop Loss", "Stop in Pari", "Take Profit", "Trailing Stop"],
             key="risultato"
         )
 
@@ -111,6 +126,7 @@ if st.session_state.apri_journal:
     with col3:
         prezzo_entrata = st.text_input("Prezzo d'entrata", key="prezzo_entrata")
         prezzo_uscita = st.text_input("Prezzo d'uscita", key="prezzo_uscita")
+        pnl = st.number_input("Profit/Loss (€)", step=1.0, format="%.2f", key="pnl")
 
         direzione = st.selectbox(
             "Side",
@@ -118,70 +134,91 @@ if st.session_state.apri_journal:
             key="direzione"
         )
 
-st.markdown("""
-<style>
-div.stElementContainer.st-key-salva_trade div.stButton > button {
-    background-color: #39FF14 !important;
-    color: black !important;
-    border: none !important;
-    border-radius: 12px !important;
-    font-weight: bold !important;
-    font-size: 18px !important;
-}
+    # Pulsanti
+    col_spazio, col_chiudi, col_salva = st.columns([4, 1, 1])
 
-div.stElementContainer.st-key-chiudi_journal div.stButton > button {
-    background-color: #9400D3 !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 12px !important;
-    font-weight: bold !important;
-    font-size: 18px !important;
-}
-</style>
-""", unsafe_allow_html=True)
+    with col_chiudi:
+        st.button(
+            "Chiudi Trade",
+            key="chiudi_journal",
+            use_container_width=True,
+            on_click=chiudi_trade
+        )
 
-col_spazio, col_chiudi, col_salva = st.columns([4, 1, 1])
+    with col_salva:
+        salva = st.button(
+            "Salva Trade",
+            key="salva_trade",
+            use_container_width=True
+        )
 
-with col_chiudi:
-    chiudi = st.button("Chiudi Trade", key="chiudi_journal", use_container_width=True)
+    # Azione salvataggio
+    if salva:
+        dati_trade = (
+            nome,
+            trade_numero,
+            data_trade,
+            emozione,
+            asset,
+            risultato,
+            mercato,
+            trigger_entrata,
+            motivo_uscita,
+            contratti,
+            chiusura,
+            prezzo_entrata,
+            prezzo_uscita,
+            direzione,
+            pnl
+        )
 
-with col_salva:
-    salva = st.button("Salva Trade", key="salva_trade", use_container_width=True)
+        salva_trade(dati_trade)
+        st.success("Trade salvato con successo")
 
-if salva and st.session_state.apri_journal:
-    dati_trade = (
-        "nome",
-        "trade numero",
-        emozione,
-        asset,
-        risultato,
-        mercato,
-        trigger_entrata,
-        motivo_uscita,
-        contratti,
-        chiusura,
-        prezzo_entrata,
-        prezzo_uscita,
-        direzione
-    )
 
-    salva_trade_sql(dati_trade)
-    st.success("Trade salvato nel database.")
+# Carica dati dal DB
+df = carica_trades()
 
-if chiudi:
-    st.session_state.apri_journal = False
 
-df = pd.read_sql("SELECT * FROM trades ORDER BY id DESC", conn)
+# Tabella trades
+# Stato visualizzazione tabella
+if "mostra_tutti_trades" not in st.session_state:
+    st.session_state.mostra_tutti_trades = False
 
+# Tabella
 if not df.empty:
     st.subheader("Trade salvati")
-    st.dataframe(df, use_container_width=True)
+
+    df_visibile = df if st.session_state.mostra_tutti_trades else df.head(5)
+    st.dataframe(df_visibile, use_container_width=True)
+
+    if len(df) > 5:
+        testo_bottone = (
+            "Mostra solo ultimi 5"
+            if st.session_state.mostra_tutti_trades
+            else "Visualizza tutto"
+        )
+
+        if st.button(testo_bottone, key="toggle_trades"):
+            st.session_state.mostra_tutti_trades = not st.session_state.mostra_tutti_trades
+            st.rerun()
+
+
+# Statistiche finali
+if not df.empty:
+    st.markdown("---")
+    st.subheader("Statistiche")
+
+    mostra_grafico_winrate(df)
 
     csv = df.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="Scarica CSV",
+        "Scarica CSV",
         data=csv,
         file_name="trades.csv",
-        mime="text/csv"
+        mime="text/csv",
+        key="download_csv_trades"
     )
 
+
+mostra_grafico_pnl(df)

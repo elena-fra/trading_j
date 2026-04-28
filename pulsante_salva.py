@@ -1,61 +1,60 @@
-#PULSANTE SALVA
-import streamlit as st
+import sqlite3
 import pandas as pd
-import os
-from datetime import datetime
 
-def salva_trade_dati():
-    """Salva i dati del trade corrente in trades.csv"""
-    
-    # Recupera tutti i dati dai session_state
-    nuovo_trade = {
-        "data_ora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "nome": st.session_state.get("nome", ""),
-        "trade_numero": st.session_state.get("trade_numero", ""),
-        "emozione": st.session_state.get("emozione", ""),
-        "asset": st.session_state.get("asset", ""),
-        "risultato": st.session_state.get("risultato", ""),
-        "mercato": st.session_state.get("mercato", ""),
-        "trigger_entrata": st.session_state.get("trigger_entrata", ""),
-        "motivo_uscita": st.session_state.get("motivo_uscita", ""),
-        "contratti": st.session_state.get("contratti", 1),
-        "chiusura": st.session_state.get("chiusura", ""),
-        "prezzo_entrata": st.session_state.get("prezzo_entrata", ""),
-        "prezzo_uscita": st.session_state.get("prezzo_uscita", ""),
-        "direzione": st.session_state.get("direzione", "")
-    }
-    
-    FILE_TRADES = "trades.csv"
-    
-    # Crea il file se non esiste
-    if not os.path.exists(FILE_TRADES):
-        df = pd.DataFrame(columns=nuovo_trade.keys())
-        df.to_csv(FILE_TRADES, index=False)
-    
-    # Aggiunge il nuovo trade
-    df = pd.read_csv(FILE_TRADES)
-    df = pd.concat([df, pd.DataFrame([nuovo_trade])], ignore_index=True)
-    df.to_csv(FILE_TRADES, index=False)
-    
-    return True
 
-def mostra_statistiche():
-    """Mostra statistiche base dai trade salvati"""
-    FILE_TRADES = "trades.csv"
-    
-    if os.path.exists(FILE_TRADES):
-        df = pd.read_csv(FILE_TRADES)
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Trade totali", len(df))
-        with col2:
-            st.metric("Win Rate", f"{len(df[df['risultato'].str.contains('Profit', na=False)])/len(df)*100:.1f}%")
-        with col3:
-            st.metric("Long", len(df[df['direzione']=='Long']))
-        with col4:
-            st.metric("Short", len(df[df['direzione']=='Short']))
-        
-        st.dataframe(df.tail(10))
-    else:
-        st.info("Nessun trade salvato ancora")
+
+DB_NAME = "trades.db"
+
+def get_conn():
+    return sqlite3.connect(DB_NAME, check_same_thread=False)
+
+def init_db():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT,
+        trade_numero TEXT,
+        data_trade TEXT,
+        emozione TEXT,
+        asset TEXT,
+        risultato TEXT,
+        mercato TEXT,
+        trigger_entrata TEXT,
+        motivo_uscita TEXT,
+        contratti INTEGER,
+        chiusura TEXT,
+        prezzo_entrata TEXT,
+        prezzo_uscita TEXT,
+        direzione TEXT,
+        pnl REAL
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+def salva_trade(dati):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+    INSERT INTO trades (
+        nome, trade_numero, data_trade, emozione, asset, risultato, mercato,
+        trigger_entrata, motivo_uscita, contratti, chiusura,
+        prezzo_entrata, prezzo_uscita, direzione, pnl
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, dati)
+
+    conn.commit()
+    conn.close()
+
+def carica_trades():
+    conn = get_conn()
+    df = pd.read_sql("SELECT * FROM trades ORDER BY id DESC", conn)
+    conn.close()
+    return df
+
+
